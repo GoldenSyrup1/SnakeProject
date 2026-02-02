@@ -1,8 +1,8 @@
+import random
+
 import pygame
 from pygame.math import Vector2
-import sys
-import math
-import random
+
 width = 1000
 height = 500
 pygame.init()
@@ -24,20 +24,24 @@ apple.fill("Red")
 apple_pos = Vector2(
     random.randrange(0, width, cell),
     random.randrange(0, height, cell)
+
 )
+
 while True:
+    prev_velocity = velocity
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             pygame.quit()
             exit()
         if event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_UP and velocity.y == 0:
+            
+            if event.key == pygame.K_UP and prev_velocity.y == 0:
                 velocity = Vector2(0, -speed)
-            if event.key == pygame.K_DOWN and velocity.y == 0:
+            elif event.key == pygame.K_DOWN and prev_velocity.y == 0:
                 velocity = Vector2(0, speed)
-            if event.key == pygame.K_LEFT and velocity.x == 0:
+            elif event.key == pygame.K_LEFT and prev_velocity.x == 0:
                 velocity = Vector2(-speed, 0)
-            if event.key == pygame.K_RIGHT and velocity.x == 0:
+            elif event.key == pygame.K_RIGHT and prev_velocity.x == 0:
                 velocity = Vector2(speed, 0)
     if velocity.length_squared() != 0:
         old_head = snake_body[0].copy()
@@ -53,7 +57,7 @@ while True:
     if head in snake_body[1:]:
         snake_body = [Vector2(start_x, start_y)]
         velocity = Vector2(0, 0)
-    if head == apple_pos:
+    if head == apple_pos or apple_pos in snake_body:
         apple_pos = Vector2(
             random.randrange(0, width, cell),
             random.randrange(0, height, cell)
