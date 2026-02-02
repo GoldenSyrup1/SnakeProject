@@ -14,10 +14,11 @@ clock = pygame.time.Clock()
 start_x = width / 2
 start_y = height / 2
 
-velocity = Vector2(0, 0)
+
 snake_body = [Vector2(start_x, start_y)]
 cell = 25
 speed = cell
+velocity = Vector2(speed, 0)
 
 apple = pygame.Surface((cell, cell))
 apple.fill("Red")
@@ -33,16 +34,11 @@ while True:
         if event.type == pygame.QUIT:
             pygame.quit()
             exit()
-        if event.type == pygame.KEYDOWN:
-
-            if event.key == pygame.K_UP and prev_velocity.y == 0:
-                velocity = Vector2(0, -speed)
-            elif event.key == pygame.K_DOWN and prev_velocity.y == 0:
-                velocity = Vector2(0, speed)
-            elif event.key == pygame.K_LEFT and prev_velocity.x == 0:
-                velocity = Vector2(-speed, 0)
-            elif event.key == pygame.K_RIGHT and prev_velocity.x == 0:
-                velocity = Vector2(speed, 0)
+        if event.type == pygame.KEYDOWN and velocity.length_squared() != 0:
+            if event.key == pygame.K_LEFT:
+                velocity = velocity.rotate(-90)
+            elif event.key == pygame.K_RIGHT:
+                velocity = velocity.rotate(90)
     if velocity.length_squared() != 0:
         old_head = snake_body[0].copy()
         snake_body[0] += velocity
