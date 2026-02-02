@@ -62,7 +62,7 @@ while True:
     screen.fill("Black")
     pygame.draw.rect(
         screen,
-        "Blue",
+        "Yellow",
         (head.x, head.y, cell, cell)
     )
     for segment in snake_body[1:]:
