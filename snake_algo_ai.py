@@ -44,15 +44,24 @@ class SnakeAlgoAI:
         # start_pos = snake head: Vector2(x,y)
         # end_pos = apple: Vector2(a,b)
         snake_head = snake[0]
+
         open_set = []  # lives outside the while loop
         visited = set()  # tracks what's already been expanded
         came_from = {}  # tracks where each node came from
-
+        steps = 0 # limiter
         # seed it with the head
         heapq.heappush(open_set, (0, 0, (int(snake_head.x), int(snake_head.y))))
         while open_set:
+            steps += 1
+            if steps > self.rows * self.cols:
+
+                return None
             f, g, current = heapq.heappop(open_set) # pop from open set to get current
+            if current in visited:  # ADD THIS
+                continue
+
             if current == (int(apple.x), int(apple.y)):
+
                 path = []
                 while current != (int(snake_head.x), int(snake_head.y)):
                     path.append(Vector2(current[0], current[1]))
@@ -71,7 +80,7 @@ class SnakeAlgoAI:
             # check if there is anything they have explored or interfered with
             for i in cardinal_directions:
                 if not ((i.x < 0 or i.x >= self.width) or (i.y < 0 or i.y >= self.height)) and not (
-                        i in snake) and not ((int(i.x), int(i.y)) in visited):
+                        i in snake[:-1]) and not ((int(i.x), int(i.y)) in visited):
                     valid_directions.append(i)
 
             for neighbor in valid_directions:
@@ -89,10 +98,17 @@ class SnakeAlgoAI:
         # return None if no such path exists
         return None
 
-
     def survival_check(self, snake, path):
-
-        pass
+        if path is None:
+            return False
+        sim_snake = snake.copy()
+        for i in range(1, len(path) - 1):  # stop one before apple
+            new_head = path[i]
+            sim_snake = [new_head] + sim_snake[:-1]  # normal move, pop tail
+        # final step: eat apple, don't pop tail
+        sim_snake = [path[-1]] + sim_snake  # grow
+        result = self.astar(sim_snake, sim_snake[-1])
+        return result is not None
 
     def perturb(self, snake, apple):
         pass
@@ -105,5 +121,5 @@ ai = SnakeAlgoAI(1000, 500, 25)
 snake = [Vector2(500, 250), Vector2(500, 225), Vector2(500, 200)]
 apple = Vector2(300, 100)
 path = ai.astar(snake, apple)
-for pos in path:
-    print(pos)
+print(ai.survival_check(snake,path))
+
