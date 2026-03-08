@@ -44,29 +44,32 @@ class SnakeAlgoAI:
         # start_pos = snake head: Vector2(x,y)
         # end_pos = apple: Vector2(a,b)
         path = [snake[0]]
+        start = path[-1]
         neg_x = False
         neg_y = False
         change_x = self.cell
         change_y = self.cell
         # calculates horizontal steps based on grid
-        no_of_movements_x = (apple.x - snake[0].x) / self.cell
-        if no_of_movements_x < 0:
-            no_of_movements_x = abs(no_of_movements_x)
-            neg_x = True
-        # calculates vertical steps based on grid
-        no_of_movements_y = (apple.y - snake[0].y) / self.cell
-        if no_of_movements_y < 0:
-            no_of_movements_y = abs(no_of_movements_y)
-            neg_y = True
-        for x in range(int(no_of_movements_x)):
-            if neg_x:
-                change_x = -self.cell
-            path.append(Vector2(path[-1].x + change_x, path[-1].y))
-        for y in range(int(no_of_movements_y)):
-            if neg_y:
-                change_y = -self.cell
-            path.append(Vector2(path[-1].x, path[-1].y + change_y))
-        return path
+
+        left = snake[0] + Vector2(-self.cell, 0)
+        right = snake[0] + Vector2(self.cell, 0)
+        up = snake[0] + Vector2(0, -self.cell)
+        down = snake[0] + Vector2(0, self.cell)
+        cardinal_directions = [left, right, up, down]
+        valid_directions = []
+        for i in cardinal_directions:
+            if not ((i.x < 0 or i.x > self.width) or (i.y < 0 or i.y > self.height)) and not (i in snake) and not(i in path):
+                valid_directions.append(i)
+        scores = {(int(v.x), int(v.y)): 0 for v in valid_directions}
+        for j in scores.keys():
+            no_of_movements_x = abs((apple.x - j[0]) / self.cell)
+            no_of_movements_y = abs((apple.y - j[1]) / self.cell)
+            h = no_of_movements_x + no_of_movements_y
+            g = 1
+            scores[j] = g+h
+            pass
+        # For now, return none
+        return None
 
 
     def survival_check(self, snake, path):
