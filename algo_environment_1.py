@@ -49,16 +49,15 @@ while True:
         old_head = temp
     head = snake_body[0]
     if head.x < 0 or head.x >= width or head.y < 0 or head.y >= height:
+        print("I'm dead!")
         snake_body = [Vector2(start_x, start_y)]
         velocity = Vector2(0, 0)
     if head in snake_body[1:]:
+        print("I'm dead!")
         snake_body = [Vector2(start_x, start_y)]
         velocity = Vector2(0, 0)
     if head == apple_pos or apple_pos in snake_body:
-        apple_pos = Vector2(
-            random.randrange(0, width, cell),
-            random.randrange(0, height, cell)
-        )
+        apple_pos = spawn_apple(snake_body)
         snake_body.append(snake_body[-1].copy())
     screen.fill("Black")
     pygame.draw.rect(
@@ -76,6 +75,6 @@ while True:
     screen.blit(apple, apple_pos)
 
     pygame.display.update()
-    clock.tick(60)
+    clock.tick(120)
 
 
