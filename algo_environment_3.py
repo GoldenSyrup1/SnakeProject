@@ -1,7 +1,7 @@
 import random
 import pygame
 from pygame.math import Vector2
-from snake_algo_additional import SnakeAlgoAI
+from snake_algo_additional2 import SnakeAlgoAI
 
 width = 1000
 height = 500
