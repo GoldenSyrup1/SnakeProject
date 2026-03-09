@@ -31,6 +31,24 @@ def spawn_apple(snake_body):
             return pos
 
 
+def draw_hamiltonian_cycle(screen, ai):
+    cycle = ai.cycle
+
+    for i in range(len(cycle)):
+        start = cycle[i]
+        end = cycle[(i + 1) % len(cycle)]
+
+        start_pos = (int(start.x + cell // 2), int(start.y + cell // 2))
+        end_pos = (int(end.x + cell // 2), int(end.y + cell // 2))
+
+        pygame.draw.line(screen, (60, 60, 60), start_pos, end_pos, 2)
+
+    # Optional: draw small dots on cycle nodes
+    for node in cycle:
+        center = (int(node.x + cell // 2), int(node.y + cell // 2))
+        pygame.draw.circle(screen, (90, 90, 90), center, 2)
+
+
 apple_pos = spawn_apple(snake_body)
 AI = SnakeAlgoAI(width, height, cell)
 
@@ -64,6 +82,8 @@ while True:
         apple_pos = spawn_apple(snake_body)
 
     screen.fill("Black")
+
+    draw_hamiltonian_cycle(screen, AI)
 
     pygame.draw.rect(screen, "Yellow", (head.x, head.y, cell, cell))
 
