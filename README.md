@@ -8,6 +8,8 @@ Standard 4-arrow key playstyle of the game Snake.
 Snake2:
 Unique rotational 2 arrow-key playstyle of the game Snake.
 
+
+
 Q-Learning AI Files:-
 
 SnakeAI:
@@ -18,6 +20,10 @@ Q-Learning AI Environment that runs the training epochs & the snake itself. Base
 
 avg_reward_500k_epochs:
 PNG file that tracks the reward of the Q-Learning AI that it projects throughout it's training. Sadly, it seems to stagnate after some time, making it only work for snake lengths up to 20 or so.
+
+
+
+
 
 
 A* + Hamiltonian Cycle Files:-
