@@ -13,10 +13,13 @@ class SnakeAlgoAI:
     def build_hamiltonian(self):
         cycle = []
 
+        # Row 0 full width (top row)
         for col in range(self.cols):
             cycle.append(Vector2(col * self.cell, 0))
 
+        # Rows 1 to last, skipping col 0 (left column reserved for return)
         for row in range(1, self.rows):
+            cols = range(1, self.cols)
             if row % 2 == 0:
                 cols = range(1, self.cols)
             else:
@@ -24,40 +27,16 @@ class SnakeAlgoAI:
             for col in cols:
                 cycle.append(Vector2(col * self.cell, row * self.cell))
 
+        # Return path up the left column (bottom to top, skipping (0,0) since it's already in)
         for row in range(self.rows - 1, 0, -1):
             cycle.append(Vector2(0, row * self.cell))
-
-        # Duplicate check
-        coords = [(int(v.x), int(v.y)) for v in cycle]
-        duplicates = [c for c in coords if coords.count(c) > 1]
-        if duplicates:
-            print(f"DUPLICATES FOUND: {set(duplicates)}")
-        else:
-            print("No duplicates")
-
-        # Adjacency check
-        for i in range(len(cycle)):
-            a = cycle[i]
-            b = cycle[(i + 1) % len(cycle)]
-            diff = abs(a.x - b.x) + abs(a.y - b.y)
-            if diff != self.cell:
-                print(f"BROKEN LINK at index {i}: {a} -> {b}, diff={diff}")
-
-        print(f"Cycle length: {len(cycle)}, Expected: {self.rows * self.cols}")
 
         cycle_index = {(int(v.x), int(v.y)): i for i, v in enumerate(cycle)}
         return cycle, cycle_index
 
     def next_in_cycle(self, pos):
         idx = self.cycle_index[(int(pos.x), int(pos.y))]
-        next_pos = self.cycle[(idx + 1) % len(self.cycle)]
-
-        # Safety check: next must be adjacent to current head
-        diff = abs(next_pos.x - pos.x) + abs(next_pos.y - pos.y)
-        if diff != self.cell:
-            print(f"CYCLE BROKEN: head={pos}, next={next_pos}, diff={diff}")
-
-        return next_pos
+        return self.cycle[(idx + 1) % len(self.cycle)]
 
     def astar(self, snake, apple):
         # snake = [Vector2(start_x, start_y)], a bunch of positions.
@@ -119,103 +98,57 @@ class SnakeAlgoAI:
         # return None if no such path exists
         return None
 
-    def flood_fill_count(self, snake):
-        """Count reachable cells from head, given current snake body as obstacles."""
-        head = snake[0]
-        body_set = set((int(s.x), int(s.y)) for s in snake[1:])
-        start = (int(head.x), int(head.y))
-        visited = {start}
-        queue = [start]
-        while queue:
-            cx, cy = queue.pop()
-            for dx, dy in [(self.cell, 0), (-self.cell, 0), (0, self.cell), (0, -self.cell)]:
-                nx, ny = cx + dx, cy + dy
-                if 0 <= nx < self.width and 0 <= ny < self.height:
-                    if (nx, ny) not in body_set and (nx, ny) not in visited:
-                        visited.add((nx, ny))
-                        queue.append((nx, ny))
-        return len(visited)
-
     def survival_check(self, snake, path):
         if path is None:
             return False
         sim_snake = snake.copy()
-        for i in range(1, len(path) - 1):
+        for i in range(1, len(path) - 1):  # stop one before apple
             new_head = path[i]
-            sim_snake = [new_head] + sim_snake[:-1]
-        sim_snake = [path[-1]] + sim_snake  # eat apple, grow
-
-        # Check 1: can reach tail
-        if self.astar(sim_snake, sim_snake[-1]) is None:
-            return False
-        # Check 2: enough open space (at least snake length)
-        if self.flood_fill_count(sim_snake) < len(sim_snake):
-            return False
-        return True
+            sim_snake = [new_head] + sim_snake[:-1]  # normal move, pop tail
+        # final step: eat apple, don't pop tail
+        sim_snake = [path[-1]] + sim_snake  # grow
+        result = self.astar(sim_snake, sim_snake[-1])
+        return result is not None
 
     def perturb(self, snake, apple):
+        # snake = [Vector2(start_x, start_y), Vector2(tail_end_x, tail_end_y)], a bunch of positions.
+        # apple = Vector2(apple_x, apple_y)
         head_idx = self.cycle_index[(int(snake[0].x), int(snake[0].y))]
         tail_idx = self.cycle_index[(int(snake[-1].x), int(snake[-1].y))]
+        # get cardinal directions
         head = snake[0]
-        cardinal_directions = [
-            head + Vector2(-self.cell, 0),
-            head + Vector2(self.cell, 0),
-            head + Vector2(0, -self.cell),
-            head + Vector2(0, self.cell)
-        ]
+        left = head + Vector2(-self.cell, 0)
+        right = head + Vector2(self.cell, 0)
+        up = head + Vector2(0, -self.cell)
+        down = head + Vector2(0, self.cell)
+        cardinal_directions = [left, right, up, down]
+        valid_directions = []
+        # check if there is anything they have explored or interfered with
+        for i in cardinal_directions:
+            if not ((i.x < 0 or i.x >= self.width) or (i.y < 0 or i.y >= self.height)) and not (
+                    i in snake[:-1]):
+                valid_directions.append(i)
         valid_shortcuts = []
-        for neighbor in cardinal_directions:
-            if (neighbor.x < 0 or neighbor.x >= self.width or
-                    neighbor.y < 0 or neighbor.y >= self.height):
-                continue
-            if neighbor in snake[:-1]:
-                continue
+        for neighbor in valid_directions:
+            # is neighbor ahead of head but before tail in cycle order?
             neighbor_idx = self.cycle_index[(int(neighbor.x), int(neighbor.y))]
             if (neighbor_idx - head_idx) % len(self.cycle) < (tail_idx - head_idx) % len(self.cycle):
-                # Simulate moving there and check flood fill
-                sim_snake = [neighbor] + snake[:-1]
-                if self.flood_fill_count(sim_snake) >= len(sim_snake):
-                    valid_shortcuts.append(neighbor)
+                valid_shortcuts.append(neighbor)
         if not valid_shortcuts:
             return None
         return min(valid_shortcuts, key=lambda n: abs(n.x - apple.x) + abs(n.y - apple.y))
 
     def get_next_move(self, snake, apple):
         path = self.astar(snake, apple)
-        fill = self.flood_fill_count(snake)
-        print(f"Head={snake[0]}, len={len(snake)}, free={fill}")
-        if path and self.survival_check(snake, path):
-            print("Tier 1: A*")
+        survival_boolean = self.survival_check(snake, path)
+
+        if survival_boolean:
             return path[1]
-
-        shortcut = self.perturb(snake, apple)
-        if shortcut is not None:
-            print("Tier 2: Perturb")
-            return shortcut
-
-        # Tier 3: find the next safe cycle step
-        head = snake[0]
-        body_set = set((int(s.x), int(s.y)) for s in snake[1:])
-        idx = self.cycle_index[(int(head.x), int(head.y))]
-
-        for offset in range(1, len(self.cycle)):
-            candidate = self.cycle[(idx + offset) % len(self.cycle)]
-            cx, cy = int(candidate.x), int(candidate.y)
-            # Must be adjacent to head AND not in body
-            if abs(candidate.x - head.x) + abs(candidate.y - head.y) == self.cell:
-                if (cx, cy) not in body_set:
-                    print("Tier 3: Hamiltonian")
-                    return candidate
-
-        # Absolute last resort: any free neighbor
-        print("Tier 3: Emergency")
-        for dx, dy in [(self.cell, 0), (-self.cell, 0), (0, self.cell), (0, -self.cell)]:
-            nb = Vector2(head.x + dx, head.y + dy)
-            if 0 <= nb.x < self.width and 0 <= nb.y < self.height:
-                if (int(nb.x), int(nb.y)) not in body_set:
-                    return nb
-
-        return self.cycle[(idx + 1) % len(self.cycle)]  # truly stuck, die gracefully
+        else:
+            shortcut = self.perturb(snake,apple)
+            if shortcut is not None:
+                return shortcut
+        return self.next_in_cycle(snake[0])
 
 
 
