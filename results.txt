@@ -1,0 +1,953 @@
+from pygame.math import Vector2
+import heapq
+
+class SnakeAlgoAI:
+    def __init__(self, width, height, cell):
+        self.width = width
+        self.height = height
+        self.cell = cell
+        self.rows = height // cell
+        self.cols = width // cell
+        self.cycle, self.cycle_index = self.build_hamiltonian()
+
+    def build_hamiltonian(self):
+        cycle = []
+
+        for col in range(self.cols):
+            cycle.append(Vector2(col * self.cell, 0))
+
+        for row in range(1, self.rows):
+            if row % 2 == 0:
+                cols = range(1, self.cols)
+            else:
+                cols = range(self.cols - 1, 0, -1)
+            for col in cols:
+                cycle.append(Vector2(x * self.cell, y * self.cell))
+
+        for row in range(self.rows - 1, 0, -1):
+            cycle.append(Vector2(0, row * self.cell))
+
+        coords = [(int(v.x), int(v.y)) for v in cycle]
+        duplicates = [c for c in coords if coords.count(c) > 1]
+        if duplicates:
+            print(f"DUPLICATES FOUND: {set(duplicates)}")
+        else:
+            print("No duplicates")
+
+        for i in range(len(cycle)):
+            a = cycle[i]
+            b = cycle[(i + 1) % len(cycle)]
+            diff = abs(a.x - b.x) + abs(a.y - b.y)
+            if diff != self.cell:
+                print(f"BROKEN LINK at index {i}: {a} -> {b}, diff={diff}")
+
+        print(f"Cycle length: {len(cycle)}, Expected: {self.rows * self.cols}")
+
+        cycle_index = {(int(v.x), int(v.y)): i for i, v in enumerate(cycle)}
+
+        return cycle, cycle_index
+
+    def next_in_cycle(self, pos):
+        idx = self.cycle_index[(int(pos.x), int(pos.y))]
+        next_pos = self.cycle[(idx + 1) % len(self.cycle)]
+        diff = abs(next_pos.x - pos.x) + abs(next_pos.y - pos.y)
+        if diff != self.cell:
+            print(f"CYCLE BROKEN: head={pos}, next={next_pos}, diff={diff}")
+        return next_pos
+
+    def astar(self, snake, target):
+        if not snake:
+            return None
+        snake_head = snake[0]
+        step_limit = self.rows * self.cols * 4
+
+        start = (int(snake_head.x), int(snake_head.y))
+        goal = (int(target.x), int(target.y))
+
+        open_set = []
+        heapq.heappush(open_set, (0, 0, start))
+
+        came_from = {}
+        g_score = {start: 0}
+        visited = set()
+        steps = 0
+
+        while open_set:
+            steps += 1
+            if steps > step_limit:
+                return None
+
+            f, g, current = heapq.heappop(open_set)
+            if current in visited:
+                continue
+            visited.add(current)
+
+            if current == goal:
+                path = []
+                while current != start:
+                    path.append(Vector2(current[0], current[1]))
+                    current = came_from[current]
+                path.append(snake_head)
+                return path[::-1]
+
+            current_vec = Vector2(current[0], current[1])
+            for neighbor in [
+                current_vec + Vector2(-self.cell, 0),
+                current_vec + Vector2(self.cell, 0),
+                current_vec + Vector2(0, -self.cell),
+                current_vec + Vector2(0, self.cell)
+            ]:
+                if neighbor.x < 0 or neighbor.x >= self.width or neighbor.y < 0 or neighbor.y >= self.height:
+                    continue
+
+                nk = (int(neighbor.x), int(neighbor.y))
+                if neighbor in snake[:-1]:
+                    continue
+                if nk in visited:
+                    continue
+
+                tentative_g = g + 1
+                if nk not in g_score or tentative_g < g_score[nk]:
+                    g_score[nk] = tentative_g
+                    came_from[nk] = current
+                    h = (abs(neighbor.x - target.x) + abs(neighbor.y - target.y)) / self.cell
+                    heapq.heappush(open_set, (tentative_g + h, tentative_g, nk))
+
+        return None
+
+    def flood_fill_count(self, snake):
+        """Count reachable cells from head, given current snake body as obstacles."""
+        head = snake[0]
+        body_set = set((int(s.x), int(s.y)) for s in snake[1:])
+        start = (int(head.x), int(head.y))
+        visited = {start}
+        queue = [start]
+        while queue:
+            cx, cy = queue.pop()
+            for dx, dy in [(self.cell, 0), (-self.cell, 0), (0, self.cell), (0, -self.cell)]:
+                nx, ny = cx + dx, cy + dy
+                if 0 <= nx < self.width and 0 <= ny < self.height:
+                    if (nx, ny) not in body_set and (nx, ny) not in visited:
+                        visited.add((nx, ny))
+                        queue.append((nx, ny))
+        return len(visited)
+
+    def survival_check(self, snake, path, apple):
+        if path is None or len(path) < 2:
+            return False
+
+        sim_snake = snake.copy()
+
+        for i in range(1, len(path)):
+            move = path[i]
+            if i == len(path) - 1 and move == apple:
+                sim_snake = [move] + sim_snake[:]
+            else:
+                sim_snake = [move] + sim_snake[:-1]
+
+        if self.flood_fill_count(sim_snake) < len(sim_snake):
+            return False
+
+        if len(sim_snake) <= 1:
+            return True
+
+        tail = sim_snake[-1]
+        snake_without_tail = sim_snake[:-1]
+
+        if not snake_without_tail:
+            return True
+
+        if self.astar(snake_without_tail, tail) is None:
+            return False
+
+        lookahead_steps = min(12, max(4, len(sim_snake) // 8))
+        future_snake = sim_snake.copy()
+
+        for _ in range(lookahead_steps):
+            if len(future_snake) <= 1:
+                break
+
+            future_tail = future_snake[-1]
+            future_body = future_snake[:-1]
+
+            if not future_body:
+                break
+
+            path_to_tail = self.astar(future_body, future_tail)
+            if path_to_tail is None or len(path_to_tail) < 2:
+                return False
+
+            next_step = path_to_tail[1]
+            future_snake = [next_step] + future_snake[:-1]
+
+            if self.flood_fill_count(future_snake) < len(future_snake):
+                return False
+
+        return True
+
+    def _is_safe_move(self, snake, neighbor, apple=None):
+        sim_snake = self.simulate_move(snake, neighbor, apple)
+
+        reachable = self.flood_fill_count(sim_snake)
+
+        if reachable < len(sim_snake):
+            return False
+
+        board_cells = self.rows * self.cols
+        remaining = board_cells - reachable
+
+        # only apply pocket rule once snake is reasonably long
+        if len(sim_snake) > 20 and remaining > 0 and remaining < len(sim_snake) // 2:
+            return False
+
+        if len(sim_snake) <= 1:
+            return True
+
+        tail = sim_snake[-1]
+        snake_without_tail = sim_snake[:-1]
+
+        if not snake_without_tail:
+            return True
+
+        if self.astar(snake_without_tail, tail) is None:
+            return False
+
+        return True
+
+    def perturb(self, snake, apple):
+        head_idx = self.cycle_index[(int(snake[0].x), int(snake[0].y))]
+        tail_idx = self.cycle_index[(int(snake[-1].x), int(snake[-1].y))]
+        head = snake[0]
+        apple_idx = self.cycle_index[(int(apple.x), int(apple.y))]
+        cycle_len = len(self.cycle)
+
+        cardinal_directions = [
+            head + Vector2(-self.cell, 0),
+            head + Vector2(self.cell, 0),
+            head + Vector2(0, -self.cell),
+            head + Vector2(0, self.cell)
+        ]
+
+        valid_shortcuts = []
+        for neighbor in cardinal_directions:
+            if neighbor.x < 0 or neighbor.x >= self.width or neighbor.y < 0 or neighbor.y >= self.height:
+                continue
+            if neighbor in snake[:-1]:
+                continue
+
+            neighbor_idx = self.cycle_index[(int(neighbor.x), int(neighbor.y))]
+            if (neighbor_idx - head_idx) % cycle_len < (tail_idx - head_idx) % cycle_len:
+                if self._is_safe_move(snake, neighbor, apple):
+                    valid_shortcuts.append(neighbor)
+
+        if not valid_shortcuts:
+            return None
+
+        def cycle_dist_to_apple(n):
+            n_idx = self.cycle_index[(int(n.x), int(n.y))]
+            return (apple_idx - n_idx) % cycle_len
+
+        return min(valid_shortcuts, key=cycle_dist_to_apple)
+
+    def simulate_move(self, snake, move, apple=None):
+        if apple is not None and move == apple:
+            return [move] + snake[:]  # grow
+        return [move] + snake[:-1]  # normal move
+
+    def is_really_safe(self, snake, move, apple):
+        sim_snake = self.simulate_move(snake, move, apple)
+
+        if self.flood_fill_count(sim_snake) < len(sim_snake):
+            return False
+
+        tail = sim_snake[-1]
+        snake_without_tail = sim_snake[:-1]
+        if self.astar(snake_without_tail, tail) is None:
+            return False
+
+        return True
+
+    def get_next_move(self, snake, apple):
+        path = self.astar(snake, apple)
+
+        # TEMP: skip heavy survival logic for tiny snakes
+        if len(snake) <= 3 and path and len(path) >= 2:
+            print("Tier 1: A* fast start")
+            return path[1]
+
+        fill = self.flood_fill_count(snake)
+        print(f"Head={snake[0]}, len={len(snake)}, free={fill}")
+
+        if path and self.survival_check(snake, path, apple):
+            move = path[1]
+
+            head_idx = self.cycle_index[(int(snake[0].x), int(snake[0].y))]
+            move_idx = self.cycle_index[(int(move.x), int(move.y))]
+            tail_idx = self.cycle_index[(int(snake[-1].x), int(snake[-1].y))]
+            cycle_len = len(self.cycle)
+
+            head_to_tail = (tail_idx - head_idx) % cycle_len
+            head_to_move = (move_idx - head_idx) % cycle_len
+
+            # only allow A* if it stays in the safe interval before the tail
+            if 0 < head_to_move < head_to_tail:
+                print("Tier 1: A*")
+                return move
+
+        shortcut = self.perturb(snake, apple)
+        if shortcut is not None:
+            print("Tier 2: Perturb")
+            return shortcut
+
+        print("Tier 3: Hamiltonian")
+        return self.next_in_cycle(snake[0])
+
+
+
+
+Output:
+C:\Users\srira\AppData\Local\Programs\Python\Python313\python.exe C:\Users\srira\PycharmProjects\SnakeProject\algo_environment_1.py 
+C:\Users\srira\AppData\Local\Programs\Python\Python313\Lib\site-packages\pygame\pkgdata.py:25: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  from pkg_resources import resource_stream, resource_exists
+pygame 2.6.1 (SDL 2.28.4, Python 3.13.2)
+Hello from the pygame community. https://www.pygame.org/contribute.html
+No duplicates
+Cycle length: 800, Expected: 800
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Head=[925, 275], len=4, free=798
+Tier 3: Hamiltonian
+I'm dead!
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Tier 1: A* fast start
+Head=[975, 450], len=4, free=798
+Tier 2: Perturb
+Head=[975, 475], len=4, free=797
+Tier 1: A*
+Head=[950, 475], len=4, free=797
+Tier 1: A*
+Head=[925, 475], len=4, free=797
+Tier 1: A*
+Head=[900, 475], len=4, free=797
+Tier 1: A*
+Head=[875, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 450], len=4, free=797
+Tier 2: Perturb
+Head=[875, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 475], len=4, free=797
+Tier 1: A*
+Head=[875, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 450], len=4, free=797
+Tier 2: Perturb
+Head=[875, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 475], len=4, free=797
+Tier 1: A*
+Head=[875, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 450], len=4, free=797
+Tier 2: Perturb
+Head=[875, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 475], len=4, free=797
+Tier 1: A*
+Head=[875, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 450], len=4, free=797
+Tier 2: Perturb
+Head=[875, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 475], len=4, free=797
+Tier 1: A*
+Head=[875, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 450], len=4, free=797
+Tier 2: Perturb
+Head=[875, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 475], len=4, free=797
+Tier 1: A*
+Head=[875, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 450], len=4, free=797
+Tier 2: Perturb
+Head=[875, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 475], len=4, free=797
+Tier 1: A*
+Head=[875, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 450], len=4, free=797
+Tier 2: Perturb
+Head=[875, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 475], len=4, free=797
+Tier 1: A*
+Head=[875, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 450], len=4, free=797
+Tier 2: Perturb
+Head=[875, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 475], len=4, free=797
+Tier 1: A*
+Head=[875, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 450], len=4, free=797
+Tier 2: Perturb
+Head=[875, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 475], len=4, free=797
+Tier 1: A*
+Head=[875, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 450], len=4, free=797
+Tier 2: Perturb
+Head=[875, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 475], len=4, free=797
+Tier 1: A*
+Head=[875, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 450], len=4, free=797
+Tier 2: Perturb
+Head=[875, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 475], len=4, free=797
+Tier 1: A*
+Head=[875, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 450], len=4, free=797
+Tier 2: Perturb
+Head=[875, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 475], len=4, free=797
+Tier 1: A*
+Head=[875, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 450], len=4, free=797
+Tier 2: Perturb
+Head=[875, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 475], len=4, free=797
+Tier 1: A*
+Head=[875, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 450], len=4, free=797
+Tier 2: Perturb
+Head=[875, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 475], len=4, free=797
+Tier 1: A*
+Head=[875, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 450], len=4, free=797
+Tier 2: Perturb
+Head=[875, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 475], len=4, free=797
+Tier 1: A*
+Head=[875, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 450], len=4, free=797
+Tier 2: Perturb
+Head=[875, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 475], len=4, free=797
+Tier 1: A*
+Head=[875, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 450], len=4, free=797
+Tier 2: Perturb
+Head=[875, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 475], len=4, free=797
+Tier 1: A*
+Head=[875, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 450], len=4, free=797
+Tier 2: Perturb
+Head=[875, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 475], len=4, free=797
+Tier 1: A*
+Head=[875, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 450], len=4, free=797
+Tier 2: Perturb
+Head=[875, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 475], len=4, free=797
+Tier 1: A*
+Head=[875, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 450], len=4, free=797
+Tier 2: Perturb
+Head=[875, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 475], len=4, free=797
+Tier 1: A*
+Head=[875, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 450], len=4, free=797
+Tier 2: Perturb
+Head=[875, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 475], len=4, free=797
+Tier 1: A*
+Head=[875, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 450], len=4, free=797
+Tier 2: Perturb
+Head=[875, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 475], len=4, free=797
+Tier 1: A*
+Head=[875, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 450], len=4, free=797
+Tier 2: Perturb
+Head=[875, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 475], len=4, free=797
+Tier 1: A*
+Head=[875, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 450], len=4, free=797
+Tier 2: Perturb
+Head=[875, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 475], len=4, free=797
+Tier 1: A*
+Head=[875, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 450], len=4, free=797
+Tier 2: Perturb
+Head=[875, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 475], len=4, free=797
+Tier 1: A*
+Head=[875, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 450], len=4, free=797
+Tier 2: Perturb
+Head=[875, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 475], len=4, free=797
+Tier 1: A*
+Head=[875, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 450], len=4, free=797
+Tier 2: Perturb
+Head=[875, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 475], len=4, free=797
+Tier 1: A*
+Head=[875, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 450], len=4, free=797
+Tier 2: Perturb
+Head=[875, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 475], len=4, free=797
+Tier 1: A*
+Head=[875, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 450], len=4, free=797
+Tier 2: Perturb
+Head=[875, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 475], len=4, free=797
+Tier 1: A*
+Head=[875, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 450], len=4, free=797
+Tier 2: Perturb
+Head=[875, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 475], len=4, free=797
+Tier 1: A*
+Head=[875, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 450], len=4, free=797
+Tier 2: Perturb
+Head=[875, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 475], len=4, free=797
+Tier 1: A*
+Head=[875, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 450], len=4, free=797
+Tier 2: Perturb
+Head=[875, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 475], len=4, free=797
+Tier 1: A*
+Head=[875, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 450], len=4, free=797
+Tier 2: Perturb
+Head=[875, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 475], len=4, free=797
+Tier 1: A*
+Head=[875, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 450], len=4, free=797
+Tier 2: Perturb
+Head=[875, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 475], len=4, free=797
+Tier 1: A*
+Head=[875, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 450], len=4, free=797
+Tier 2: Perturb
+Head=[875, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 475], len=4, free=797
+Tier 1: A*
+Head=[875, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 450], len=4, free=797
+Tier 2: Perturb
+Head=[875, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 475], len=4, free=797
+Tier 1: A*
+Head=[875, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 450], len=4, free=797
+Tier 2: Perturb
+Head=[875, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 475], len=4, free=797
+Tier 1: A*
+Head=[875, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 475], len=4, free=797
+Tier 1: A*
+Head=[850, 450], len=4, free=797
+Tier 2: Perturb
+Head=[875, 450], len=4, free=797
+Tier 2: Perturb
+Head=[900, 450], len=4, free=797
+Tier 2: Perturb
+
+Process finished with exit code 0
